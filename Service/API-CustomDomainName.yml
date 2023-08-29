@@ -1,0 +1,174 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: 'This CloudFormation template will provision API Gateway Custom Domain Name and configure the base path mapping'
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Custom domain name configuration
+        Parameters:
+          - CustomDomainName
+          - CertificateArn
+          - EndpointType
+          - ApiType
+          - SecurityPolicy
+
+      - Label:
+          default: Base path mapping configuration
+        Parameters:
+          - BasePath
+          - ApiId
+          - Stage
+
+Parameters:
+
+# Parameter for custom domain name
+
+  CustomDomainName:
+    Description: The custom domain name for your API. Uppercase letters are not supported.
+    Type: String
+    MinLength: 1
+    MaxLength: 255
+    AllowedPattern: '^((?!-)[A-Za-z0-9-]{1,63}(?<!-)\.)+[A-Za-z]{2,6}$'
+
+  CertificateArn:
+    Description: >-
+      The reference to an AWS-managed certificate for use by the edge-optimized
+      endpoint for this domain name. AWS Certificate Manager is the only
+      supported source.
+    Type: String
+    AllowedPattern: 'arn:aws:acm:.*'
+
+  EndpointType:
+    Description: A list of the endpoint types of the domain name
+    Type: String
+    AllowedValues:
+      - EDGE
+      - REGIONAL
+    Default: EDGE
+
+  ApiType:
+    Description: Choose whether to configure Custom Domain Name for REST Api or HTTP Websocket Api
+    Type: String
+    AllowedValues:
+      - REST
+      - WEBSOCKET
+    Default: REST
+
+  SecurityPolicy:
+    Description: The Transport Layer Security (TLS) version + cipher suite for this DomainName. The valid values are TLS_1_0 and TLS_1_2
+    Type: String
+    AllowedValues:
+         - "TLS_1_0"
+         - "TLS_1_2"
+    Default: "TLS_1_2"
+
+# Parameter for base path mapping
+
+  BasePath:
+    Description: >-
+      The base path name that callers of the API must provide in the URL after
+      the domain name [Optional]
+    Type: String
+
+  ApiId:
+    Description: The ID of the API endpoint
+    Type: String
+
+  Stage:
+    Description: The name of the API's stage
+    Type: String
+
+Mappings: {}
+
+Conditions:
+  regional: !Equals 
+    - !Ref EndpointType
+    - REGIONAL
+  edge: !Equals 
+    - !Ref EndpointType
+    - EDGE
+  rest: !Equals 
+    - !Ref ApiType
+    - REST
+  websocket: !Equals 
+    - !Ref ApiType
+    - WEBSOCKET
+  restedge: !And 
+    - !Equals [!Ref EndpointType,'EDGE']
+    - !Equals [!Ref ApiType,'REST']
+  restregional: !And 
+    - !Equals [!Ref EndpointType,'REGIONAL']
+    - !Equals [!Ref ApiType,'REST']
+
+
+Resources:
+  RESTDomainName:
+    Type: 'AWS::ApiGateway::DomainName'
+    Condition: rest
+    Properties:
+      CertificateArn: !If 
+        - edge
+        - !Ref CertificateArn
+        - !Ref 'AWS::NoValue'
+      DomainName: !Ref CustomDomainName
+      EndpointConfiguration:
+        Types:
+          - !Ref EndpointType
+      RegionalCertificateArn: !If 
+        - regional
+        - !Ref CertificateArn
+        - !Ref 'AWS::NoValue'
+      SecurityPolicy: !Ref SecurityPolicy
+      Tags:
+        - Key: 'CFStackName'
+          Value: !Sub ${AWS::StackName}
+
+  RESTPathMapping:
+    Type: 'AWS::ApiGateway::BasePathMapping'
+    Condition: rest
+    Properties:
+      BasePath: !Ref BasePath
+      DomainName: !Ref RESTDomainName
+      RestApiId: !Ref ApiId
+      Stage: !Ref Stage
+
+  WebsocketDomainName:
+    Type: 'AWS::ApiGatewayV2::DomainName'
+    Condition: websocket
+    Properties:
+      DomainName: !Ref CustomDomainName
+      DomainNameConfigurations:
+        - CertificateArn: !Ref CertificateArn
+          SecurityPolicy: !Ref SecurityPolicy
+      Tags:
+        'CFStackName': !Sub ${AWS::StackName}
+
+  WebsocketPathMapping:
+    Type: 'AWS::ApiGatewayV2::ApiMapping'
+    Condition: websocket
+    Properties:
+      ApiId: !Ref ApiId
+      DomainName: !Ref WebsocketDomainName
+      Stage: !Ref Stage
+      ApiMappingKey: !Ref BasePath
+
+Outputs: 
+
+  oCustomDomainName:
+    Description: Custom Domain Name
+    Value: !Ref CustomDomainName
+
+  oDistributionDomainName:
+    Condition: restedge
+    Description: The Amazon CloudFront distribution domain name that's mapped to the custom domain name. This is only applicable for endpoints whose type is EDGE
+    Value: !GetAtt RESTDomainName.DistributionDomainName
+
+  oRegionalDomainName:
+    Condition: restregional
+    Description: The domain name associated with the regional endpoint for this custom domain name. You set up this association by adding a DNS record that points the custom domain name to this regional domain name.
+    Value: !GetAtt RESTDomainName.RegionalDomainName
+
+  oWebSocketRegionalDomainName:
+    Condition: websocket
+    Description: The domain name associated with the regional endpoint for this custom domain name. You set up this association by adding a DNS record that points the custom domain name to this regional domain name.
+    Value: !GetAtt WebsocketDomainName.RegionalDomainName

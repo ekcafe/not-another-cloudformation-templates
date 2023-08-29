@@ -1,0 +1,48 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: This template is to create API key and attach to usage plan of an existing API Gateway
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: API Key configuration
+        Parameters:
+          - pApiKeyNameTag
+          - pUsagePlanId
+
+Parameters: 
+
+  pApiKeyNameTag:
+    Description: A name tag for the API key.
+    Type: String
+
+  pUsagePlanId:
+    Description: The Id of the UsagePlan resource representing the usage plan containing the to-be-deleted UsagePlanKey resource representing a plan customer.
+    Type: String
+
+Mappings: {}
+
+Conditions: {} 
+
+Resources: 
+
+  rCreateApiKey:
+    Type: AWS::ApiGateway::ApiKey
+    Properties: 
+      Enabled: true
+      Tags: 
+        - Key: 'CFStackName'
+          Value: !Sub ${AWS::StackName}
+        - Key: 'Name'
+          Value: !Ref pApiKeyNameTag
+
+  rAttachApiKeyToUsagePlan:
+    Type: AWS::ApiGateway::UsagePlanKey
+    Properties:
+      KeyId: !Ref rCreateApiKey
+      KeyType: API_KEY
+      UsagePlanId: !Ref pUsagePlanId
+
+Outputs: 
+  oApiKeyId:
+    Description: API key ID
+    Value: !Ref rCreateApiKey
